@@ -6,8 +6,8 @@
 <meta name="color-scheme" content="light dark">
 <title>Bass Ear Trainer</title>
 <style>
-:root{--bg:#eceff2;--surface:#fff;--ink:#14181c;--muted:#58646e;--line:#d2d9df;--accent:#1d5f8f;--accent-ink:#fff;--good:#18794e;--bad:#b3261e;--live:#c2410c;--wash:#e3e9ee;color-scheme:light}
-@media (prefers-color-scheme:dark){:root{--bg:#0f1317;--surface:#171d23;--ink:#e7ecf0;--muted:#93a0ab;--line:#29323a;--accent:#79b8e6;--accent-ink:#0a1015;--good:#4cc38a;--bad:#ff8f86;--live:#ffb15c;--wash:#1e262d;color-scheme:dark}}
+:root{--bg:#eceff2;--surface:#fff;--ink:#14181c;--muted:#58646e;--line:#d2d9df;--accent:#1d5f8f;--accent-ink:#fff;--good:#18794e;--bad:#b3261e;--live:#c2410c;--wash:#e3e9ee;--on-good:#fff;--on-bad:#fff;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1317;--surface:#171d23;--ink:#e7ecf0;--muted:#93a0ab;--line:#29323a;--accent:#79b8e6;--accent-ink:#0a1015;--good:#4cc38a;--bad:#ff8f86;--live:#ffb15c;--wash:#1e262d;--on-good:#06150d;--on-bad:#2a0705;color-scheme:dark}}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html,body{margin:0}
@@ -43,6 +43,12 @@ h2{font-size:13px;margin:0 0 8px;font-weight:700;letter-spacing:.06em;text-trans
 .pill[data-s="speak"] i{background:var(--accent)}
 .pill[data-s="right"] i{background:var(--good)}
 .pill[data-s="wrong"] i{background:var(--bad)}
+.pill[data-s="right"],.pill[data-s="wrong"]{font-size:19px;padding:8px 18px 8px 14px}
+.pill[data-s="right"]{background:var(--good);color:var(--on-good)}
+.pill[data-s="wrong"]{background:var(--bad);color:var(--on-bad)}
+.pill[data-s="right"] i,.pill[data-s="wrong"] i{background:currentColor}
+.stage[data-r="right"]{border-color:var(--good);border-width:2px}
+.stage[data-r="wrong"]{border-color:var(--bad);border-width:2px}
 @keyframes pulse{50%{transform:scale(1.5);opacity:.5}}
 @media (prefers-reduced-motion:reduce){.pill[data-s="listen"] i{animation:none}}
 .staff{color:var(--ink);max-width:320px}
@@ -110,6 +116,7 @@ ul.tight li{margin:3px 0}
     <div class="level"><i id="lvl"></i></div>
    </div>
    <button id="talk" class="btn primary big" hidden>Tap, then speak</button>
+   <button id="next" class="btn primary big" hidden>Next question</button>
    <div id="pad" class="pad"></div>
    <div class="ctrl"><button id="bRepeat" class="btn">Repeat</button><button id="bSkip" class="btn">Skip</button><button id="bStop" class="btn danger">End</button></div>
   </div>
@@ -253,7 +260,7 @@ function median(a){if(!a.length)return null;const s=[...a].sort((x,y)=>x-y);cons
 /*==APP-START==*/
 const $=(s,r=document)=>r.querySelector(s);
 const KEY='bassTrainer.v1';
-const DEF={week:1,len:55,rate:1,voiceURI:'',timeoutMs:10000,gate:0.008,a4:440,singTol:50,bpm:70,speakFeedback:false,showPad:true,keepMic:false,lowB:false,ptt:false};
+const DEF={week:1,len:55,rate:1,voiceURI:'',timeoutMs:10000,gate:0.008,a4:440,singTol:50,bpm:70,sayCorrect:true,pauseMs:1500,holdNext:false,showPad:true,keepMic:false,lowB:false,ptt:false};
 function loadStore(){try{const j=JSON.parse(localStorage.getItem(KEY));if(j&&j.cfg)return{cfg:{...DEF,...j.cfg},items:j.items||{},log:j.log||[]};}catch(e){}return{cfg:{...DEF},items:{},log:[]};}
 let store=loadStore();let cfg=store.cfg;
 function save(){if(store.log.length>3000)store.log=store.log.slice(-3000);try{localStorage.setItem(KEY,JSON.stringify(store));}catch(e){}}
@@ -403,7 +410,8 @@ function closeMic(){if(S.mic){try{S.mic.close();}catch(e){}S.mic=null;}}
 function releaseMic(){if(!cfg.keepMic)closeMic();}
 
 /* ---------- UI helpers ---------- */
-function setState(kind,text){const p=$('#state');p.dataset.s=kind;$('span',p).textContent=text;}
+function setState(kind,text){const p=$('#state');p.dataset.s=kind;$('span',p).textContent=text;const st=$('.stage');if(st)st.dataset.r=(kind==='right'||kind==='wrong')?kind:'';}
+function waitNext(){return new Promise(res=>{const b=$('#next');b.hidden=false;let h;const done=()=>{b.hidden=true;b.removeEventListener('click',h);S.aborts.delete(ab);res();};h=done;const ab=done;S.aborts.add(ab);b.addEventListener('click',h);});}
 function resetMeter(){$('#mNote').textContent='–';$('#mHz').textContent='';$('#mTarget').textContent='';$('#cMark').style.left='50%';$('#lvl').style.width='0';}
 function meter(fr,targetPc){
  $('#lvl').style.width=Math.min(100,fr.rms/0.2*100)+'%';
@@ -524,7 +532,7 @@ function chk(cx){if(cx.sid!==S.sid)throw CANCEL;if(cx.gen!=null&&cx.gen!==S.q)th
 function renderQuestion(q){
  $('#prompt').textContent=q.show;$('#sub').textContent=q.sub||'';
  const sf=$('#staff');if(q.staff!=null){sf.hidden=false;sf.innerHTML=staffSVG(q.staff);}else{sf.hidden=true;sf.innerHTML='';}
- renderPad(q);$('#meter').hidden=!['play','playseq','sing'].includes(q.kind);resetMeter();$('#heard').textContent='';$('#talk').hidden=true;}
+ renderPad(q);$('#meter').hidden=!['play','playseq','sing'].includes(q.kind);resetMeter();$('#heard').textContent='';$('#talk').hidden=true;$('#next').hidden=true;}
 async function ask(q,sid,assess){
  const cx={sid,gen:++S.q};S.curQ=q;
  renderQuestion(q);setState('speak','Question');
@@ -546,8 +554,10 @@ async function ask(q,sid,assess){
  S.log.push({skill:q.skill,ok:res.ok,ms:res.ms,tier:res.tier,show:q.show,reveal:q.revealShow});
  $('#meter').hidden=true;$('#talk').hidden=true;
  const tl=res.ms!=null?` · ${(res.ms/1000).toFixed(1)} s`:'';
- if(res.ok){setState('right','Correct'+tl+` · tier ${res.tier}`);chime(true);$('#heard').textContent='You: '+res.said;if(cfg.speakFeedback)await speak('Correct.');await wait(700);}
- else{setState('wrong',res.miss?'No answer':'Not quite');chime(false);$('#heard').textContent=`You: ${res.said}. Answer: ${q.revealShow}`;await wait(350);chk(cx);await speak(res.miss?`The answer is ${q.reveal}.`:`Not quite. ${q.reveal}.`);await wait(450);}
+ if(res.ok){setState('right','Correct'+tl+` · tier ${res.tier}`);chime(true);$('#heard').textContent='You: '+res.said;await wait(250);chk(cx);if(cfg.sayCorrect)await speak('Correct.');}
+ else{setState('wrong',res.miss?'No answer':'Wrong');chime(false);$('#heard').textContent=`You: ${res.said}. Answer: ${q.revealShow}`;await wait(350);chk(cx);await speak(res.miss?`The answer is ${q.reveal}.`:`Not quite. ${q.reveal}.`);}
+ chk(cx);
+ if(cfg.holdNext)await waitNext();else await wait(cfg.pauseMs);
  chk(cx);}
 
 /* ---------- blocks ---------- */
@@ -688,7 +698,8 @@ function renderSetup(){
   <label class="f">Question voice <select data-cfg="voiceURI" data-t="s"><option value="">Default</option>${vopts}</select></label>
   <label class="f">Speaking rate <input type="range" min="0.7" max="1.4" step="0.05" value="${cfg.rate}" data-cfg="rate" data-t="n"></label>
   <label class="f">Time allowed per answer ${sel('timeoutMs',[8000,10000,15000,20000],v=>v/1000+' seconds')}</label>
-  ${chk2('showPad','Show tap pad for voice questions')}${chk2('ptt','Tap to talk (start voice recognition with a tap)')}${chk2('speakFeedback','Say "Correct" aloud')}</div>
+  ${chk2('showPad','Show tap pad for voice questions')}${chk2('ptt','Tap to talk (start voice recognition with a tap)')}${chk2('sayCorrect','Say "Correct" aloud')}${chk2('holdNext','Wait for me to tap Next after each answer')}
+  <label class="f">Pause after each answer ${sel('pauseMs',[1000,1500,2500,4000],v=>v/1000+' seconds')}</label></div>
  <div class="card stack"><h2>Bass and singing</h2>
   <label class="f">Mic sensitivity (lower number = more sensitive) <input type="range" min="0.002" max="0.05" step="0.001" value="${cfg.gate}" data-cfg="gate" data-t="n"></label>
   <label class="f">Singing tolerance ${sel('singTol',[30,50,75],v=>'±'+v+' cents')}</label>
