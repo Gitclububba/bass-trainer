@@ -168,7 +168,7 @@ function parseNoteList(text){
   const name=accName(letter,acc);out.push({name,pc:pcOf(name)});
  }
  return out;}
-const NUMW={zero:0,oh:0,one:1,won:1,two:2,to:2,too:2,three:3,four:4,for:4,fore:4,five:5,six:6,seven:7,eight:8,ate:8,nine:9,ten:10,eleven:11,twelve:12,first:1,second:2,third:3,fourth:4,fifth:5,sixth:6,seventh:7,eighth:8,root:1,tonic:1};
+const NUMW={zero:0,open:0,oh:0,one:1,won:1,two:2,to:2,too:2,three:3,four:4,for:4,fore:4,five:5,six:6,seven:7,eight:8,ate:8,nine:9,ten:10,eleven:11,twelve:12,first:1,second:2,third:3,fourth:4,fifth:5,sixth:6,seventh:7,eighth:8,root:1,tonic:1};
 function parseNumber(text,ctx){
  let out=null;
  for(const t of norm(text).split(/\s+/)){
@@ -182,6 +182,10 @@ function parseNumber(text,ctx){
  if(ctx==='degree'&&(out<1||out>8))return null;
  if(ctx==='semis'&&(out<0||out>12))return null;
  return out;}
+function parseQuality(text){const t=norm(text);if(/\b(dim|diminished)\b/.test(t))return 'dim';if(/\b(minor|min)\b/.test(t))return 'minor';if(/\b(major|maj)\b/.test(t))return 'major';return null;}
+function triadQuality(p){const a=mod(p[1]-p[0],12),b=mod(p[2]-p[0],12);if(a===4&&b===7)return 'major';if(a===3&&b===7)return 'minor';if(a===3&&b===6)return 'dim';if(a===4&&b===8)return 'aug';return null;}
+function diatonicTriad(n,d){return[n[d-1],n[(d+1)%7],n[(d+3)%7]];}
+function fretsFor(openPc,pc,maxF){const o=[];for(let f=0;f<=maxF;f++)if(mod(openPc+f,12)===pc)o.push(f);return o;}
 const IV_MAP={minor2:1,major2:2,minor3:3,major3:4,perfect4:5,perfect5:7,minor6:8,major6:9,minor7:10,major7:11};
 function parseInterval(text){
  const t=norm(text);
@@ -274,20 +278,36 @@ const STR_SAY={E:'ee',A:'ay',D:'dee',G:'gee'};
 const ROOTS=['C','D','E','F','G','A','B','Bb','Eb','F#','Ab','Db'];
 const MAJ_ALL=['C','G','D','A','E','B','F#','Db','Ab','Eb','Bb','F'];
 const MIN_ALL=['A','E','B','F#','C#','G#','D','G','C','F','Bb','Eb'];
-function keysForWeek(w){if(w<=1)return{major:['G'],minor:[]};if(w===2)return{major:['G','C','D'],minor:[]};if(w<=4)return{major:['G','C','D','A','E','F'],minor:['E','A','D']};return{major:MAJ_ALL,minor:MIN_ALL};}
+function keysForWeek(w){
+ if(w<=1)return{major:['G','C','D'],minor:['E','A','B']};
+ if(w===2)return{major:['G','C','D','A','E','F'],minor:['E','A','B','D','F#','C#']};
+ if(w===3)return{major:['G','C','D','A','E','F','B','Bb','Eb'],minor:['E','A','B','D','F#','C#','G','C','G#']};
+ return{major:MAJ_ALL,minor:MIN_ALL};}
 
 /* ---------- question banks ---------- */
 function seqQ(notes,pcs,degs,label,lsay){
  return{kind:'playseq',speak:`In ${lsay}, play degrees ${degs.join(', ')}.`,show:label,sub:`Play degrees ${degs.join(' ')}`,
   expectPcs:degs.map(d=>pcs[(d-1)%7]),seqLen:degs.length,reveal:degs.map(d=>speakNote(notes[(d-1)%7])).join(', '),
   revealShow:degs.map(d=>notes[(d-1)%7]).join(' '),t2:1500+1200*degs.length,timeoutMs:6000+3000*degs.length};}
+/* ---------- what each program week unlocks ---------- */
+function fretPlan(w){if(w<=1)return{E:5,A:5};if(w===2)return{E:12,A:12};if(w===3)return{E:12,A:12,D:5,G:5};return{E:12,A:12,D:12,G:12};}
+function ivSetFor(w){const S=w<=1?['m3','M3','P4','P5','P8']:w===2?['m2','M2','m3','M3','P4','P5','m6','M6','P8']:null;return S?IVS.filter(i=>S.includes(i.short)):IVS;}
+function earIvFor(w){const S=w<=3?['m3','M3','P4','P5','P8','M2']:w===4?['m2','M2','m3','M3','P4','P5','m6','M6','P8']:null;return S?IVS.filter(i=>S.includes(i.short)):IVS;}
+const WEEK_INFO={
+ 1:'Majors G, C, D and their relative minors E, A, B. E and A strings, frets 0–5. Essential intervals (thirds, fourth, fifth, octave). Chord tones in those six keys. Singing degrees 1, 3, 5, 8. Bass-clef note names.',
+ 2:'Majors G, C, D, A, E, F and minors E, A, B, F#, C#, D. E and A strings to fret 12. Adds 2nds and 6ths. Ear: major or minor chords and scales. Play-the-note bass-clef questions.',
+ 3:'Majors add B, Bb, Eb and minors add G, C, G#. D and G strings, frets 0–5. All 12 intervals. Ear: name intervals, sing all degrees and minor degrees 3, 6, 7.',
+ 4:'All 12 major keys and all 12 natural minor keys. All four strings to fret 12. More ear intervals, and diminished chords by ear.',
+ 5:'All keys, mixed. Adds diatonic chords: quality of the chord on each degree, spelling it and playing it. Singing intervals above a note.'};
 const SK={
  fret:{name:'Fretboard notes',target:{acc:.9,ms:2000},items(w){
-  const strings=w>=4?['E','A','D','G']:['E','A'];const maxF=w>=3?12:5;const out=[];
-  for(const s of strings){const seen=new Set();
+  const plan=fretPlan(w);const out=[];
+  for(const s of Object.keys(plan)){const maxF=plan[s];const seen=new Set();
    for(let f=0;f<=maxF;f++){const pc=(OPEN[s]+f)%12;
     if(f>0)out.push({id:`fret:say:${s}:${f}`,build:()=>({kind:'note',speak:`What note is on the ${STR_SAY[s]} string, fret ${f}?`,show:`${s} string · fret ${f}`,sub:'Say the note name',expectPcs:[pc],reveal:speakNote(SHARP_NAMES[pc]),revealShow:showPc(pc),t2:3000})});
-    if(!seen.has(pc)){seen.add(pc);out.push({id:`fret:find:${s}:${pc}`,build:()=>{const n=nm(pc);return{kind:'play',speak:`Play ${speakNote(n)} on the ${STR_SAY[s]} string.`,show:`Find ${n}`,sub:`on the ${s} string`,expectPcs:[pc],seqLen:1,reveal:`${speakNote(n)} is fret ${f} on the ${STR_SAY[s]} string`,revealShow:`${n}: fret ${f}`,t2:3000};}});}
+    if(!seen.has(pc)){seen.add(pc);
+     out.push({id:`fret:find:${s}:${pc}`,build:()=>{const n=nm(pc);return{kind:'play',speak:`Play ${speakNote(n)} on the ${STR_SAY[s]} string.`,show:`Find ${n}`,sub:`on the ${s} string`,expectPcs:[pc],seqLen:1,reveal:`${speakNote(n)} is ${f===0?'the open string':'fret '+f} on the ${STR_SAY[s]} string`,revealShow:`${n}: ${f===0?'open':'fret '+f}`,t2:3000};}});
+     out.push({id:`fret:num:${s}:${pc}`,build:()=>{const n=nm(pc);const fr=fretsFor(OPEN[s],pc,maxF);return{kind:'fretnum',speak:`What fret is ${speakNote(n)} on the ${STR_SAY[s]} string?`,show:`${n} on the ${s} string`,sub:'Say the fret number. Say "open" for zero.',expectNums:fr,reveal:fr.length>1?`fret ${fr[0]} or fret ${fr[1]}`:`fret ${fr[0]}`,revealShow:'fret '+fr.join(' or '),t2:3500};}});}
    }}
   return out;}},
  degree:{name:'Scale degrees',target:{acc:.9},items(w){
@@ -299,32 +319,47 @@ const SK={
     out.push({id:`deg:num:${mode}:${root}:${d}`,build:()=>({kind:'degree',speak:`In ${lsay}, which degree is ${speakNote(n)}?`,show:label,sub:`Which degree is ${n}? Say 1 to 7.`,expectNum:d,reveal:String(d),revealShow:String(d),t2:3000})});
     out.push({id:`deg:play:${mode}:${root}:${d}`,build:()=>({kind:'play',speak:`Play degree ${d} of ${lsay}.`,show:label,sub:`Play degree ${d}`,expectPcs:[pc],seqLen:1,reveal:speakNote(n),revealShow:n,t2:3000})});}
    out.push({id:`deg:seq8:${mode}:${root}`,build:()=>seqQ(notes,pcs,[2,1,4,3,6,5,7,8],label,lsay)});
-   out.push({id:`deg:seq4:${mode}:${root}`,build:()=>seqQ(notes,pcs,shuffle([1,2,3,4,5,6,7]).slice(0,4),label,lsay)});}
+   out.push({id:`deg:seq4:${mode}:${root}`,build:()=>seqQ(notes,pcs,shuffle([1,2,3,4,5,6,7]).slice(0,4),label,lsay)});
+   out.push({id:`deg:spell:${mode}:${root}`,build:()=>({kind:'noteseq',speak:`Spell the ${lsay} scale. Say all seven notes, going up.`,show:`Spell the ${label} scale`,sub:'Say all seven notes, going up',expectPcs:pcs,seqLen:7,reveal:notes.map(speakNote).join(', '),revealShow:notes.join(' '),t2:10000,timeoutMs:25000})});
+   out.push({id:`deg:scale:${mode}:${root}`,build:()=>({kind:'playseq',speak:`Play the ${lsay} scale, one octave up.`,show:`Play the ${label} scale`,sub:'Eight notes, root up to the octave',expectPcs:[...pcs,pcs[0]],seqLen:8,reveal:[...notes,notes[0]].map(speakNote).join(', '),revealShow:[...notes,notes[0]].join(' '),t2:11000,timeoutMs:30000})});
+   out.push({id:`deg:rel:${mode}:${root}`,build:()=>{const t=mode==='major'?spellFrom(root,9,5):spellFrom(root,3,2);const what=mode==='major'?'relative minor':'relative major';return{kind:'note',speak:`What is the ${what} of ${lsay}?`,show:`${cap(what)} of ${label}`,sub:'Say the note',expectPcs:[pcOf(t)],reveal:speakNote(t),revealShow:t,t2:3500};}});
+  }
   return out;}},
  interval:{name:'Intervals',target:{acc:.9},items(w){
-  const set=IVS.filter(iv=>w>=3||['m3','M3','P4','P5','P8'].includes(iv.short));const out=[];
-  for(const iv of set){
+  const out=[];
+  for(const iv of ivSetFor(w)){
    out.push({id:`iv:semis:${iv.short}`,build:()=>({kind:'semis',speak:`How many semitones in a ${iv.say}?`,show:cap(iv.say),sub:'Say the number of semitones',expectNum:iv.s,reveal:String(iv.s),revealShow:String(iv.s),t2:3000})});
    out.push({id:`iv:name:${iv.short}`,build:()=>({kind:'interval',speak:`What interval is ${iv.s} semitones?`,show:`${iv.s} semitones`,sub:'Say it like "major third"',expectNum:iv.s,reveal:iv.say,revealShow:iv.say,t2:3000})});
    out.push({id:`iv:above:${iv.short}`,build:()=>{const r=rnd(ROOTS);const t=spellFrom(r,iv.s,iv.steps);return{kind:'note',speak:`What note is a ${iv.say} above ${speakNote(r)}?`,show:`${cap(iv.say)} above ${r}`,sub:'Say the note',expectPcs:[pcOf(t)],reveal:speakNote(t),revealShow:t,t2:4000};}});
    out.push({id:`iv:play:${iv.short}`,build:()=>{const r=rnd(ROOTS);const t=spellFrom(r,iv.s,iv.steps);return{kind:'play',speak:`Play a ${iv.say} above ${speakNote(r)}.`,show:`${cap(iv.say)} above ${r}`,sub:'Play the upper note',expectPcs:[pcOf(t)],seqLen:1,reveal:speakNote(t),revealShow:t,t2:4000};}});}
   return out;}},
  triad:{name:'Chord tones',target:{acc:.9,ms:5000},items(w){
-  const roots=w<=1?['G','C','D']:w===2?['G','C','D','A','E','F']:MAJ_ALL;const out=[];
-  for(const q of (w>=3?['major','minor']:['major']))for(const root of (q==='major'?roots:keysForWeek(w).minor)){
+  const K=keysForWeek(w);const out=[];
+  for(const q of ['major','minor'])for(const root of K[q]){
    const third=spellFrom(root,q==='major'?4:3,2),fifth=spellFrom(root,7,4);const lsay=`${speakNote(root)} ${q}`;const pcs=[pcOf(root),pcOf(third),pcOf(fifth)];const label=`${root} ${q}`;
-   out.push({id:`tri:tone3:${q}:${root}`,build:()=>({kind:'note',speak:`What is the third of ${lsay}?`,show:`Third of ${label}`,sub:'Say the note',expectPcs:[pcs[1]],reveal:speakNote(third),revealShow:third,t2:3000})});
-   out.push({id:`tri:tone5:${q}:${root}`,build:()=>({kind:'note',speak:`What is the fifth of ${lsay}?`,show:`Fifth of ${label}`,sub:'Say the note',expectPcs:[pcs[2]],reveal:speakNote(fifth),revealShow:fifth,t2:3000})});
-   out.push({id:`tri:spell:${q}:${root}`,build:()=>({kind:'noteseq',speak:`Spell ${lsay}: root, third, fifth.`,show:`Spell ${label}`,sub:'Say three notes in order',expectPcs:pcs,seqLen:3,reveal:[root,third,fifth].map(speakNote).join(', '),revealShow:[root,third,fifth].join(' '),t2:5000})});
-   out.push({id:`tri:play:${q}:${root}`,build:()=>({kind:'playseq',speak:`Play the root, third and fifth of ${lsay}.`,show:`Play ${label}`,sub:'Root, third, fifth, one note at a time',expectPcs:pcs,seqLen:3,reveal:[root,third,fifth].map(speakNote).join(', '),revealShow:[root,third,fifth].join(' '),t2:5000,timeoutMs:15000})});}
+   out.push({id:`tri:tone3:${q}:${root}`,build:()=>({kind:'note',speak:`What is the third of the ${lsay} chord?`,show:`Third of ${label}`,sub:'Say the note',expectPcs:[pcs[1]],reveal:speakNote(third),revealShow:third,t2:3000})});
+   out.push({id:`tri:tone5:${q}:${root}`,build:()=>({kind:'note',speak:`What is the fifth of the ${lsay} chord?`,show:`Fifth of ${label}`,sub:'Say the note',expectPcs:[pcs[2]],reveal:speakNote(fifth),revealShow:fifth,t2:3000})});
+   out.push({id:`tri:spell:${q}:${root}`,build:()=>({kind:'noteseq',speak:`Spell the ${lsay} chord: root, third, fifth.`,show:`Spell the ${label} chord`,sub:'Root, third, fifth: say three notes',expectPcs:pcs,seqLen:3,reveal:[root,third,fifth].map(speakNote).join(', '),revealShow:[root,third,fifth].join(' '),t2:5000,timeoutMs:15000})});
+   out.push({id:`tri:play:${q}:${root}`,build:()=>({kind:'playseq',speak:`Play the root, third and fifth of the ${lsay} chord.`,show:`Play the ${label} chord`,sub:'Root, third, fifth, one note at a time',expectPcs:pcs,seqLen:3,reveal:[root,third,fifth].map(speakNote).join(', '),revealShow:[root,third,fifth].join(' '),t2:5000,timeoutMs:15000})});}
+  if(w>=5)for(const mode of ['major','minor'])for(const root of K[mode]){
+   const notes=scaleNotes(root,mode);const label=`${root} ${mode}`;const lsay=`${speakNote(root)} ${mode}`;
+   for(let d=1;d<=7;d++){const tr=diatonicTriad(notes,d);const tp=tr.map(pcOf);const ql=triadQuality(tp);const qn=ql==='dim'?'diminished':ql;
+    out.push({id:`dia:q:${mode}:${root}:${d}`,build:()=>({kind:'quality',speak:`In ${lsay}, what is the quality of the chord built on degree ${d}?`,show:label,sub:`Chord on degree ${d}: major, minor or diminished?`,expectStr:ql,opts:['major','minor','dim'],reveal:qn,revealShow:qn,t2:4000})});
+    out.push({id:`dia:spell:${mode}:${root}:${d}`,build:()=>({kind:'noteseq',speak:`In ${lsay}, spell the chord built on degree ${d}.`,show:`${label}: chord on degree ${d}`,sub:'Root, third, fifth: say three notes',expectPcs:tp,seqLen:3,reveal:tr.map(speakNote).join(', '),revealShow:tr.join(' '),t2:6000,timeoutMs:15000})});
+    out.push({id:`dia:play:${mode}:${root}:${d}`,build:()=>({kind:'playseq',speak:`In ${lsay}, play the chord built on degree ${d}, one note at a time.`,show:`${label}: chord on degree ${d}`,sub:'Root, third, fifth',expectPcs:tp,seqLen:3,reveal:tr.map(speakNote).join(', '),revealShow:tr.join(' '),t2:6000,timeoutMs:15000})});}}
   return out;}},
  ear:{name:'Ear and voice',target:{acc:.8},items(w){
   const out=[];
   for(let pc=0;pc<12;pc++)out.push({id:`ear:match:${pc}`,build:()=>{let m=60+pc;if(m>71)m-=12;return{kind:'sing',speak:'Listen, then sing the note.',show:'Sing the note you hear',sub:'Match the pitch with your voice',tones:[{midi:m,dur:1.6}],singPc:pc,reveal:`That was ${speakNote(SHARP_NAMES[pc])}`,revealShow:showPc(pc),t2:6000,timeoutMs:10000};}});
   const degs=w>=3?[1,2,3,4,5,6,7,8]:[1,3,5,8];
-  for(const d of degs)out.push({id:`ear:singdeg:${d}`,build:()=>{const t=rnd([0,2,4,5,7,9]);const m=60+t;const target=mod(t+MAJOR[(d-1)%7],12);return{kind:'sing',speak:`Listen to the starting note. Then sing degree ${d}.`,show:`Sing degree ${d}`,sub:`Starting note: ${SHARP_NAMES[t]}`,tones:[{midi:m,dur:1.4}],singPc:target,reveal:`Degree ${d} is ${speakNote(SHARP_NAMES[target])}`,revealShow:showPc(target),t2:6000,timeoutMs:10000};}});
-  if(w>=3)for(const iv of IVS)out.push({id:`ear:int:${iv.short}`,build:()=>{const r=48+Math.floor(Math.random()*16);return{kind:'interval',speak:'What interval do you hear?',show:'Name the interval',sub:'Two notes, going up',tones:[{midi:r,dur:0.9,gap:120},{midi:r+iv.s,dur:1.3}],expectNum:iv.s,reveal:iv.say,revealShow:iv.say,t2:4000};}});
-  if(w>=5)for(const iv of IVS.filter(i=>i.s<=12))out.push({id:`ear:singint:${iv.short}`,build:()=>{const t=rnd([0,2,4,5,7,9]);const target=mod(t+iv.s,12);return{kind:'sing',speak:`Listen to the starting note. Then sing a ${iv.say} above it.`,show:`Sing a ${iv.say}`,sub:`Starting note: ${SHARP_NAMES[t]}`,tones:[{midi:60+t,dur:1.4}],singPc:target,reveal:`That is ${speakNote(SHARP_NAMES[target])}`,revealShow:showPc(target),t2:6000,timeoutMs:10000};}});
+  for(const d of degs)out.push({id:`ear:singdeg:${d}`,build:()=>{const t=rnd([0,2,4,5,7,9]);const target=mod(t+MAJOR[(d-1)%7],12);return{kind:'sing',speak:`Listen to the starting note. Then sing degree ${d}.`,show:`Sing degree ${d}`,sub:`Starting note: ${SHARP_NAMES[t]}`,tones:[{midi:60+t,dur:1.4}],singPc:target,reveal:`Degree ${d} is ${speakNote(SHARP_NAMES[target])}`,revealShow:showPc(target),t2:6000,timeoutMs:10000};}});
+  if(w>=3)for(const d of [3,6,7])out.push({id:`ear:singmin:${d}`,build:()=>{const t=rnd([0,2,4,5,7,9]);const target=mod(t+MINOR[d-1],12);return{kind:'sing',speak:`Listen to the starting note. Then sing degree ${d} of the natural minor scale.`,show:`Sing minor degree ${d}`,sub:`Starting note: ${SHARP_NAMES[t]}, natural minor`,tones:[{midi:60+t,dur:1.4}],singPc:target,reveal:`That is ${speakNote(SHARP_NAMES[target])}`,revealShow:showPc(target),t2:6000,timeoutMs:10000};}});
+  if(w>=2){
+   const cq=[['major',[4,7]],['minor',[3,7]]];if(w>=4)cq.push(['dim',[3,6]]);
+   for(const [qn,iv] of cq)out.push({id:`ear:chordq:${qn}`,build:()=>{const r=48+Math.floor(Math.random()*12);return{kind:'quality',speak:'What kind of chord is this?',show:'Name the chord type',sub:w>=4?'Major, minor or diminished':'Major or minor',tones:[{midis:[r,r+iv[0],r+iv[1]],dur:1.9}],expectStr:qn,opts:w>=4?['major','minor','dim']:['major','minor'],reveal:qn==='dim'?'diminished':qn,revealShow:qn==='dim'?'diminished':qn,t2:4000};}});
+   for(const [qn,sc] of [['major',MAJOR],['minor',MINOR]])out.push({id:`ear:scaleq:${qn}`,build:()=>{const r=50+Math.floor(Math.random()*10);const tn=[...sc,12].map((s,i)=>({midi:r+s,dur:i===7?1.2:0.36,gap:i===7?0:40}));return{kind:'quality',speak:'Listen to this scale. Is it major or minor?',show:'Major or minor scale?',sub:'Eight notes going up',tones:tn,expectStr:qn,opts:['major','minor'],reveal:qn,revealShow:qn,t2:5000};}});}
+  if(w>=3)for(const iv of earIvFor(w))out.push({id:`ear:int:${iv.short}`,build:()=>{const r=48+Math.floor(Math.random()*16);return{kind:'interval',speak:'What interval do you hear?',show:'Name the interval',sub:'Two notes, going up',tones:[{midi:r,dur:0.9,gap:120},{midi:r+iv.s,dur:1.3}],expectNum:iv.s,reveal:iv.say,revealShow:iv.say,t2:4000};}});
+  if(w>=5)for(const iv of IVS)out.push({id:`ear:singint:${iv.short}`,build:()=>{const t=rnd([0,2,4,5,7,9]);const target=mod(t+iv.s,12);return{kind:'sing',speak:`Listen to the starting note. Then sing a ${iv.say} above it.`,show:`Sing a ${iv.say}`,sub:`Starting note: ${SHARP_NAMES[t]}`,tones:[{midi:60+t,dur:1.4}],singPc:target,reveal:`That is ${speakNote(SHARP_NAMES[target])}`,revealShow:showPc(target),t2:6000,timeoutMs:10000};}});
   return out;}},
  notation:{name:'Bass-clef reading',target:{acc:.9},items(w){
   const out=[];
@@ -333,11 +368,17 @@ const SK={
    if(w>=2)out.push({id:`not:play:${d}`,build:()=>({kind:'play',speak:'Play this note.',show:'Play this note',sub:'Bass clef. Any octave counts.',staff:d,expectPcs:[pc],seqLen:1,reveal:speakNote(letter),revealShow:letter,t2:4000})});}
   return out;}}
 };
+
+const weekText=w=>WEEK_INFO[w]||'Weeks 6 to 12 use the same questions as week 5. Their own drills are not built yet.';
 const SKILLS=['fret','degree','interval','triad','ear','notation'];
 const poolCache={};
 function poolFor(skills){
  const out=[];
- for(const s of skills){const k=s+':'+cfg.week;if(!poolCache[k])poolCache[k]=SK[s].items(cfg.week).map(it=>({...it,skill:s}));out.push(...poolCache[k]);}
+ for(const s of skills){const k=s+':'+cfg.week;
+  if(!poolCache[k]){let prev=null;
+   if(cfg.week>1){const pk=s+':'+(cfg.week-1);if(!poolCache[pk])poolCache[pk]=SK[s].items(cfg.week-1).map(it=>({...it,skill:s}));prev=new Set(poolCache[pk].map(p=>p.id));}
+   poolCache[k]=SK[s].items(cfg.week).map(it=>({...it,skill:s,isNew:prev?!prev.has(it.id):false}));}
+  out.push(...poolCache[k]);}
  return out;}
 
 /* ---------- session plan (from the program's daily routine) ---------- */
@@ -354,11 +395,13 @@ const BASE=[
 function buildPlan(day){
  const L=cfg.len;
  if(day===0)return[{id:'review',name:'Light review',min:15,skills:SKILLS,review:true}];
- if(day===6){return SKILLS.filter(s=>poolFor([s]).length&&(s!=='interval'||cfg.week>=2)).map(s=>({id:'as-'+s,name:'Assessment: '+SK[s].name,skills:[s],fixed:8,assess:true}));}
+ if(day===6){return SKILLS.filter(s=>poolFor([s]).length&&true).map(s=>({id:'as-'+s,name:'Assessment: '+SK[s].name,skills:[s],fixed:8,assess:true}));}
  const bl=BASE.map(b=>({...b}));
  const emph={1:['degree'],2:['degree'],3:['apply'],4:['ear'],5:['rhythm','notation']}[day]||[];
  for(const b of bl)if(emph.includes(b.id))b.w+=5;
- if(day===2){const d=bl.find(b=>b.id==='degree');d.skills=['degree','interval'];d.name='Scale degrees and intervals';}
+ const dg=bl.find(b=>b.id==='degree');
+ if(day===1){dg.name='Major keys and scale degrees';dg.filter=it=>!/:minor:/.test(it.id);}
+ if(day===2){dg.skills=['degree','interval'];dg.name='Natural minor and intervals';dg.filter=it=>it.skill!=='degree'||/:minor:/.test(it.id);}
  const tot=bl.reduce((a,b)=>a+b.w,0);
  for(const b of bl)b.min=b.w*L/tot;
  return bl;}
@@ -428,11 +471,13 @@ function staffSVG(d){
  return `<svg viewBox="0 0 300 130" role="img" aria-label="Note on a bass clef staff">${lines}${clef}${ledg}<ellipse cx="190" cy="${y}" rx="7.5" ry="5.4" transform="rotate(-20 190 ${y})" fill="currentColor"/>${stem}</svg>`;}
 function renderPad(q){
  const pad=$('#pad');pad.className='pad';pad.innerHTML='';S.buf=[];
- const voiceKinds=['note','noteseq','degree','semis','interval'];
+ const voiceKinds=['note','noteseq','degree','semis','interval','fretnum','quality'];
  if(!voiceKinds.includes(q.kind)||!(cfg.showPad||S.srBroken||!SRClass)){pad.hidden=true;return;}
  pad.hidden=false;let btns=[];
  if(q.kind==='note'||q.kind==='noteseq')btns=SHARP_NAMES.map((n,i)=>({v:i,h:SHARP_NAMES[i]===FLAT_NAMES[i]?n:`${n}<small>${FLAT_NAMES[i]}</small>`}));
  else if(q.kind==='degree'){btns=[1,2,3,4,5,6,7,8].map(n=>({v:n,h:String(n)}));}
+ else if(q.kind==='fretnum'){btns=[0,1,2,3,4,5,6,7,8,9,10,11,12].map(n=>({v:n,h:n===0?'open':String(n)}));}
+ else if(q.kind==='quality'){pad.classList.add('wide');const L={major:'Major',minor:'Minor',dim:'Diminished'};btns=q.opts.map(o=>({v:o,h:L[o]}));}
  else if(q.kind==='semis'){btns=[0,1,2,3,4,5,6,7,8,9,10,11,12].map(n=>({v:n,h:String(n)}));}
  else{pad.classList.add('wide');btns=IVS.map(i=>({v:i.s,h:`${i.short}<small>${i.say}</small>`}));}
  for(const b of btns){const e=document.createElement('button');e.className='btn padb';e.innerHTML=b.h;e.addEventListener('click',()=>padTap(q,b.v));pad.appendChild(e);}}
@@ -445,10 +490,12 @@ function padTap(q,v){
 function parseByKind(q,alts){
  for(const a of alts){let v=null;
   if(q.kind==='note'){const l=parseNoteList(a);if(l.length)v=l[l.length-1].pc;}
-  else if(q.kind==='noteseq'){const l=parseNoteList(a);if(l.length>=q.seqLen)v=l.slice(-q.seqLen).map(x=>x.pc);}
+  else if(q.kind==='noteseq'){const l=parseNoteList(a);if(l.length>=q.seqLen)v=l.slice(0,q.seqLen).map(x=>x.pc);}
   else if(q.kind==='degree')v=parseNumber(a,'degree');
   else if(q.kind==='semis')v=parseNumber(a,'semis');
   else if(q.kind==='interval')v=parseInterval(a);
+  else if(q.kind==='fretnum')v=parseNumber(a,'semis');
+  else if(q.kind==='quality')v=parseQuality(a);
   if(v!=null)return{val:v,text:a};}
  return null;}
 function listenSpeech(q,settled){
@@ -470,6 +517,7 @@ function listenSpeech(q,settled){
   try{r.start();}catch(e){fin({error:'start-failed'});}});}
 function waitTalk(){return new Promise(res=>{const b=$('#talk');b.hidden=false;let h;const done=ok=>{b.hidden=true;b.removeEventListener('click',h);S.aborts.delete(ab);res(ok);};h=()=>done(true);const ab=()=>done(false);S.aborts.add(ab);b.addEventListener('click',h);});}
 async function voiceLoop(q,t0,settled,onAns){
+ let acc=[],firstT=null;
  while(!settled()){
   if(S.ptt){const ok=await waitTalk();if(!ok||settled())return;}
   const r=await listenSpeech(q,settled);
@@ -479,6 +527,16 @@ async function voiceLoop(q,t0,settled,onAns){
     if(!S.ptt){S.ptt=true;$('#heard').textContent='Voice could not start by itself. Tap the button, then speak.';continue;}
     S.srBroken=true;$('#talk').hidden=true;$('#heard').textContent='Speech recognition is blocked or off. Use the tap pad. (Allow Microphone and Speech Recognition for Safari, and turn on Dictation in iOS Settings.)';renderPad(q);return;}
    await wait(250);continue;}
+  if(r.alts&&r.alts.length&&q.kind==='noteseq'){
+   const full=parseByKind(q,r.alts);
+   if(full&&!acc.length){onAns({via:'voice',val:full.val,text:full.text,ms:(r.tFirst??performance.now())-t0});return;}
+   const l=parseNoteList(r.alts[0]);
+   if(!l.length&&!acc.length){onAns({via:'voice',val:null,text:r.alts[0],ms:(r.tFirst??performance.now())-t0});return;}
+   if(firstT==null)firstT=r.tFirst??performance.now();
+   acc.push(...l.map(x=>x.pc));
+   if(acc.length>=q.seqLen){onAns({via:'voice',val:acc.slice(0,q.seqLen),text:acc.map(p=>SHARP_NAMES[p]).join(' '),ms:firstT-t0});return;}
+   $('#heard').textContent=`Heard ${acc.length} of ${q.seqLen}: `+acc.map(p=>SHARP_NAMES[p]).join(' ')+'. Keep going.';
+   continue;}
   if(r.alts&&r.alts.length){
    const p=parseByKind(q,r.alts);const ms=(r.tFirst??performance.now())-t0;
    onAns({via:'voice',val:p?p.val:null,text:p?p.text:r.alts[0],ms});return;}
@@ -488,7 +546,7 @@ function collectChoice(q,t0){
   let settled=false,to;
   const fin=r=>{if(settled)return;settled=true;S.padResolve=null;clearTimeout(to);S.aborts.delete(ab);abortAll();resolve(r);};
   const ab=()=>fin({aborted:true});S.aborts.add(ab);
-  to=setTimeout(()=>fin({timeout:true}),cfg.timeoutMs);
+  to=setTimeout(()=>fin({timeout:true}),q.timeoutMs||cfg.timeoutMs);
   S.padResolve=v=>fin({via:'tap',val:v,ms:performance.now()-t0});
   if(SRClass&&!S.srBroken)voiceLoop(q,t0,()=>settled,fin);
  });}
@@ -523,6 +581,8 @@ function judge(q,ans){
   case 'noteseq':ok=Array.isArray(ans.val)&&ans.val.length===q.expectPcs.length&&ans.val.every((p,i)=>p===q.expectPcs[i]);said=Array.isArray(ans.val)?ans.val.map(p=>SHARP_NAMES[p]).join(' '):`"${ans.text}"`;break;
   case 'degree':case 'semis':case 'interval':ok=ans.val===q.expectNum;said=ans.val==null?`"${ans.text}"`:String(ans.val);break;
   case 'play':case 'playseq':{const p=ans.events.map(e=>e.pc);ok=p.length>=q.expectPcs.length&&q.expectPcs.every((x,i)=>x===p[i]);said=p.map(x=>SHARP_NAMES[x]).join(' ');break;}
+  case 'fretnum':ok=ans.val!=null&&q.expectNums.includes(ans.val);said=ans.val==null?`"${ans.text}"`:(ans.val===0?'open':'fret '+ans.val);break;
+  case 'quality':ok=ans.val===q.expectStr;said=ans.val==null?`"${ans.text}"`:ans.val;break;
   case 'sing':ok=!!ans.ok;said=`${Math.round(ans.err??ans.best??0)}¢ off`;break;}
  return{ok,ms:ans.ms??null,said,via:ans.via};}
 
@@ -537,7 +597,7 @@ async function ask(q,sid,assess){
  const cx={sid,gen:++S.q};S.curQ=q;
  renderQuestion(q);setState('speak','Question');
  await speak(q.speak);chk(cx);
- if(q.tones){for(const t of q.tones){tone(t.midi,t.dur);await wait(t.dur*1000+(t.gap??200));chk(cx);}}
+ if(q.tones){for(const t of q.tones){if(t.midis)t.midis.forEach(m=>tone(m,t.dur,0.14));else tone(t.midi,t.dur);await wait(t.dur*1000+(t.gap??200));chk(cx);}}
  await wait(q.tones?350:150);chk(cx);
  setState('listen',q.kind==='play'||q.kind==='playseq'?'Play it':q.kind==='sing'?'Sing it':'Your answer');
  const t0=performance.now();let ans;
@@ -587,6 +647,7 @@ async function runBlock(b,sid){
  if(b.type==='miccheck')return runMicCheck(b.kind,sid);
  let pool=poolFor(b.skills);
  if(b.review){const seen=pool.filter(p=>store.items[p.id]);const due=seen.filter(p=>store.items[p.id].due<=Date.now());pool=due.length?due:seen;}
+ if(b.filter)pool=pool.filter(b.filter);
  if(!pool.length)return;
  const end=b.fixed?Infinity:(b.min==null?Infinity:Date.now()+b.min*60000);let n=0,last=null;
  const clk=setInterval(()=>{if(b.fixed)$('#clock').textContent=`${n}/${b.fixed}`;else tickClock(end);},500);
@@ -594,7 +655,9 @@ async function runBlock(b,sid){
   while(true){
    chk({sid,gen:S.q});
    if(b.fixed?n>=b.fixed:Date.now()>=end)break;
-   const it=pickItem(pool,store.items,Date.now(),last);const q=it.build();q.id=it.id;q.skill=it.skill;
+   let it=pickItem(pool,store.items,Date.now(),last);
+   if(!store.items[it.id]&&cfg.week>1){const nf=pool.filter(p=>p.isNew&&!store.items[p.id]&&p.id!==last);if(nf.length&&Math.random()<0.6)it=rnd(nf);}
+   const q=it.build();q.id=it.id;q.skill=it.skill;
    let again;
    do{again=false;
     try{await ask(q,sid,b.assess);n++;}
@@ -692,7 +755,7 @@ function renderSetup(){
  $('#v-setup').innerHTML=`
  <div class="card stack"><h2>Program</h2>
   <label class="f">Program week ${sel('week',[1,2,3,4,5,6,7,8,9,10,11,12],v=>'Week '+v)}</label>
-  <div class="note">Week sets the content: weeks 1–2 use E and A strings, frets 0–5 and the key of G (then C, D); week 3 opens the full 12 frets and natural minor; week 4 adds D and G strings; week 5 opens all keys.</div>
+  <div class="note" id="weekInfo">${weekText(cfg.week)}</div>
   <label class="f">Session length ${sel('len',[45,55,60],v=>v+' minutes')}</label></div>
  <div class="card stack"><h2>Voice</h2>
   <label class="f">Question voice <select data-cfg="voiceURI" data-t="s"><option value="">Default</option>${vopts}</select></label>
@@ -707,7 +770,7 @@ function renderSetup(){
   <label class="f">Metronome (BPM) <input type="range" min="50" max="120" step="1" value="${cfg.bpm}" data-cfg="bpm" data-t="n"></label>
   ${chk2('lowB','5-string bass (detect low B)')}${chk2('keepMic','Keep mic open between questions (faster, may make questions quieter)')}</div>
  <div class="card stack"><h2>Reset</h2><button class="btn danger" id="reset1">Erase all progress</button><button class="btn danger" id="reset2" hidden>Tap again to erase. This cannot be undone.</button></div>`;
- document.querySelectorAll('[data-cfg]').forEach(el=>{el.onchange=el.oninput=()=>{const k=el.dataset.cfg,t=el.dataset.t;cfg[k]=t==='b'?el.checked:t==='n'?+el.value:el.value;if(k==='week')Object.keys(poolCache).forEach(x=>delete poolCache[x]);save();};});
+ document.querySelectorAll('[data-cfg]').forEach(el=>{el.onchange=el.oninput=()=>{const k=el.dataset.cfg,t=el.dataset.t;cfg[k]=t==='b'?el.checked:t==='n'?+el.value:el.value;if(k==='week'){Object.keys(poolCache).forEach(x=>delete poolCache[x]);const wi=$('#weekInfo');if(wi)wi.textContent=weekText(cfg.week);}save();};});
  $('#reset1').onclick=()=>{$('#reset1').hidden=true;$('#reset2').hidden=false;};
  $('#reset2').onclick=()=>{store.items={};store.log=[];save();renderSetup();};}
 
