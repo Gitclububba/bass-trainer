@@ -51,6 +51,8 @@ h2{font-size:13px;margin:0 0 8px;font-weight:700;letter-spacing:.06em;text-trans
 .stage[data-r="wrong"]{border-color:var(--bad);border-width:2px}
 @keyframes pulse{50%{transform:scale(1.5);opacity:.5}}
 @media (prefers-reduced-motion:reduce){.pill[data-s="listen"] i{animation:none}}
+.fc{width:100%;text-align:center;min-height:240px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:10px;font:inherit;color:inherit;cursor:pointer}
+.fc:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .staff{color:var(--ink);max-width:320px}
 .staff svg{width:100%;height:auto;display:block}
 .meter{display:flex;flex-direction:column;gap:10px}
@@ -94,6 +96,7 @@ ul.tight li{margin:3px 0}
  <h1>Bass Ear Trainer</h1>
  <nav class="tabs" role="tablist">
   <button class="tab" data-tab="train" aria-selected="true">Train</button>
+  <button class="tab" data-tab="cards" aria-selected="false">Cards</button>
   <button class="tab" data-tab="progress" aria-selected="false">Progress</button>
   <button class="tab" data-tab="setup" aria-selected="false">Setup</button>
  </nav>
@@ -122,6 +125,7 @@ ul.tight li{margin:3px 0}
   </div>
   <div id="summary" class="stack" hidden></div>
  </section>
+ <section id="v-cards" class="stack" hidden></section>
  <section id="v-progress" class="stack" hidden></section>
  <section id="v-setup" class="stack" hidden></section>
 </main>
@@ -265,7 +269,7 @@ function median(a){if(!a.length)return null;const s=[...a].sort((x,y)=>x-y);cons
 const $=(s,r=document)=>r.querySelector(s);
 const KEY='bassTrainer.v1';
 const DEF={week:1,len:55,rate:1,voiceURI:'',timeoutMs:10000,gate:0.008,a4:440,singTol:50,bpm:70,sayCorrect:true,pauseMs:1500,holdNext:false,showPad:true,keepMic:false,lowB:false,ptt:false};
-function loadStore(){try{const j=JSON.parse(localStorage.getItem(KEY));if(j&&j.cfg)return{cfg:{...DEF,...j.cfg},items:j.items||{},log:j.log||[]};}catch(e){}return{cfg:{...DEF},items:{},log:[]};}
+function loadStore(){try{const j=JSON.parse(localStorage.getItem(KEY));if(j&&j.cfg)return{cfg:{...DEF,...j.cfg},items:j.items||{},log:j.log||[],cards:j.cards||{}};}catch(e){}return{cfg:{...DEF},items:{},log:[],cards:{}};}
 let store=loadStore();let cfg=store.cfg;
 function save(){if(store.log.length>3000)store.log=store.log.slice(-3000);try{localStorage.setItem(KEY,JSON.stringify(store));}catch(e){}}
 const rnd=a=>a[Math.floor(Math.random()*a.length)];
@@ -770,15 +774,111 @@ function renderSetup(){
   <label class="f">Metronome (BPM) <input type="range" min="50" max="120" step="1" value="${cfg.bpm}" data-cfg="bpm" data-t="n"></label>
   ${chk2('lowB','5-string bass (detect low B)')}${chk2('keepMic','Keep mic open between questions (faster, may make questions quieter)')}</div>
  <div class="card stack"><h2>Reset</h2><button class="btn danger" id="reset1">Erase all progress</button><button class="btn danger" id="reset2" hidden>Tap again to erase. This cannot be undone.</button></div>`;
- document.querySelectorAll('[data-cfg]').forEach(el=>{el.onchange=el.oninput=()=>{const k=el.dataset.cfg,t=el.dataset.t;cfg[k]=t==='b'?el.checked:t==='n'?+el.value:el.value;if(k==='week'){Object.keys(poolCache).forEach(x=>delete poolCache[x]);const wi=$('#weekInfo');if(wi)wi.textContent=weekText(cfg.week);}save();};});
+ document.querySelectorAll('[data-cfg]').forEach(el=>{el.onchange=el.oninput=()=>{const k=el.dataset.cfg,t=el.dataset.t;cfg[k]=t==='b'?el.checked:t==='n'?+el.value:el.value;if(k==='week'){Object.keys(poolCache).forEach(x=>delete poolCache[x]);CS.pool=null;CS.cur=null;const wi=$('#weekInfo');if(wi)wi.textContent=weekText(cfg.week);}save();};});
  $('#reset1').onclick=()=>{$('#reset1').hidden=true;$('#reset2').hidden=false;};
- $('#reset2').onclick=()=>{store.items={};store.log=[];save();renderSetup();};}
+ $('#reset2').onclick=()=>{store.items={};store.log=[];store.cards={};save();renderSetup();};}
+
+/* ---------- flash cards (no bass, no voice) ---------- */
+const CARD_TOPICS=[['all','All topics'],['fret','Fretboard'],['keys','Keys and key signatures'],['degree','Scales and scale degrees'],['interval','Intervals'],['chord','Chords'],['notation','Bass-clef reading'],['ear','Ear (listen, then flip)'],['theory','Formulas and rules']];
+const INT_TUNE={m2:'Jaws theme',M2:'Happy Birthday',m3:'Smoke on the Water',M3:'When the Saints Go Marching In',P4:'Here Comes the Bride',TT:'The Simpsons theme',P5:'Twinkle Twinkle Little Star',M6:'My Bonnie Lies Over the Ocean',m7:'Somewhere (West Side Story)',M7:'Take On Me (chorus)',P8:'Somewhere Over the Rainbow'};
+const CARD_SKIP=/^(deg:play|deg:seq|deg:scale|fret:find|iv:play|tri:play|dia:play|not:play|ear:match|ear:singdeg|ear:singmin|ear:singint)/;
+const ASK_DEF={note:'Which note?',noteseq:'Say the notes in order.',degree:'Which degree?',semis:'How many semitones?',interval:'Which interval?',fretnum:'Which fret? (open = 0)',quality:'Which kind?'};
+const CONCEPTS=[
+ ['theory',1,'Major scale pattern','Whole, whole, half, whole, whole, whole, half (W W H W W W H)'],
+ ['theory',1,'Natural minor scale pattern','Whole, half, whole, whole, half, whole, whole (W H W W H W W)'],
+ ['theory',1,'How far apart is one fret?','One half step (one semitone). A whole step is two frets.'],
+ ['theory',1,'Which two pairs of natural notes are only a half step apart?','B to C, and E to F. There is no sharp or flat between them.'],
+ ['fret',1,'Open strings of a 4-string bass, lowest to highest','E, A, D, G'],
+ ['fret',1,'Which fret gives the octave of an open string?','Fret 12. It has the same note name as the open string.'],
+ ['chord',1,'Major triad formula','Root, major third, perfect fifth (1 3 5). Semitones: 4 then 3.'],
+ ['chord',1,'Minor triad formula','Root, minor third, perfect fifth (1 ♭3 5). Semitones: 3 then 4.'],
+ ['theory',1,'How do you find the relative minor of a major key?','Go to the 6th degree of the major scale (or down a minor third). C major → A minor.'],
+ ['theory',1,'How do you find the relative major of a minor key?','Go to the 3rd degree of the minor scale (or up a minor third). A minor → C major.'],
+ ['theory',1,'Natural minor compared with major','Natural minor has a flat 3rd, flat 6th and flat 7th.'],
+ ['notation',1,'Bass-clef lines, bottom to top','G B D F A (Good Boys Do Fine Always)'],
+ ['notation',1,'Bass-clef spaces, bottom to top','A C E G (All Cows Eat Grass)'],
+ ['keys',1,'Order of sharps','F C G D A E B'],
+ ['keys',2,'Same note, two names: C#, D#, F#, G#, A#','Db, Eb, Gb, Ab, Bb'],
+ ['fret',2,'On the bass, how do you find a fifth above a note?','One string up, two frets up. Example: E string open (E) → A string fret 2 (B).'],
+ ['fret',2,'On the bass, how do you find the octave above a note?','Two strings up, two frets up. Example: E string open (E) → D string fret 2 (E).'],
+ ['ear',2,'How do you tell a major chord from a minor chord by ear?','Listen to the third. Major third (4 semitones) sounds bright. Minor third (3 semitones) sounds darker.'],
+ ['keys',3,'Order of flats','B E A D G C F'],
+ ['keys',3,'Quick rule: finding a major key from its sharps','The last sharp is the 7th degree. The key is a half step above it. Sharps F# C# → key of D.'],
+ ['keys',3,'Quick rule: finding a major key from its flats','The second-to-last flat is the key name. Flats B♭ E♭ A♭ → key of E♭. (One flat is F major.)'],
+ ['fret',3,'What is the interval between neighbouring open strings?','A perfect fourth (5 semitones).'],
+ ['fret',3,'Fret 5 on a string matches which note?','The next higher open string (E→A, A→D, D→G).'],
+ ['interval',3,'Six semitones has two names','Tritone, also called augmented fourth or diminished fifth.'],
+ ['chord',4,'Diminished triad formula','Root, minor third, diminished fifth (1 ♭3 ♭5). Semitones: 3 then 3.'],
+ ['chord',4,'Augmented triad formula','Root, major third, augmented fifth (1 3 ♯5). Semitones: 4 then 4.'],
+ ['chord',5,'Triad quality on each degree of a major key','Major, minor, minor, major, major, minor, diminished (I ii iii IV V vi vii°)'],
+ ['chord',5,'Triad quality on each degree of natural minor','Minor, diminished, major, minor, minor, major, major (i ii° III iv v VI VII)'],
+ ['chord',5,'How do you build the chord on a scale degree?','Take that note, skip one scale note, take the next, skip one, take the next (degrees d, d+2, d+4).'],
+ ['chord',5,'Which chords are major in a major key?','I, IV and V (degrees 1, 4 and 5).']];
+const SIG_SH='FCGDAEB',SIG_FL='BEADGCF';
+function keySig(root,mode){const n=scaleNotes(root,mode).filter(x=>/[#b]/.test(x));if(!n.length)return'No sharps or flats';const sh=n[0].includes('#');const order=sh?SIG_SH:SIG_FL;n.sort((a,b)=>order.indexOf(a[0])-order.indexOf(b[0]));return`${n.length} ${sh?'sharp':'flat'}${n.length>1?'s':''}: ${n.join(', ')}`;}
+function cardsFor(w){
+ const wk=Math.min(w,5);const out=[];
+ for(const s of SKILLS)for(const it of poolFor([s])){
+  if(CARD_SKIP.test(it.id))continue;
+  const topic=it.id.startsWith('fret')?'fret':it.id.startsWith('deg')?'degree':it.id.startsWith('iv')?'interval':(it.id.startsWith('tri')||it.id.startsWith('dia'))?'chord':it.id.startsWith('ear')?'ear':'notation';
+  out.push({id:it.id,topic,isNew:!!it.isNew,make(){
+   const q=it.build();let ask=(q.sub||'').replace(/\s*Say[^.?]*[.?]?/g,'').replace(/\s*Play[^.?]*[.?]?/g,'').replace(/:\s*say[^.?]*/i,'').trim();
+   if(it.id.startsWith('deg:note'))ask=ask.replace(/\.$/,'')+' is which note?';
+   if(!ask||q.staff!=null||it.id.startsWith('fret:say')||it.id.startsWith('deg:rel')||it.id.startsWith('iv:above')||it.id.startsWith('tri:tone'))ask=ASK_DEF[q.kind]||'';
+   let back=q.revealShow;const m=/^(?:iv:name|ear:int):(.+)$/.exec(it.id);if(m&&INT_TUNE[m[1]])back+=`\nTune to remember it: ${INT_TUNE[m[1]]}`;
+   if(it.id.startsWith('fret:num'))back=q.revealShow;
+   return{title:q.show,ask,staff:q.staff,tones:q.tones,back};}});}
+ CONCEPTS.forEach((c,i)=>{if(c[1]<=wk)out.push({id:'cn:'+i,topic:c[0],isNew:c[1]===wk&&wk>1,make:()=>({title:c[2],ask:'',back:c[3]})});});
+ const K=keysForWeek(wk);
+ for(const mode of ['major','minor'])for(const r of K[mode])out.push({id:`ks:${mode}:${r}`,topic:'keys',isNew:false,make:()=>({title:`Key signature of ${r} ${mode}`,ask:'How many sharps or flats? Which ones?',back:keySig(r,mode)})});
+ for(const r of K.major){const rel=spellFrom(r,9,5);out.push({id:`ksrev:${r}`,topic:'keys',isNew:false,make:()=>{const sg=keySig(r,'major');return{title:sg==='No sharps or flats'?'Which major and minor key have no sharps or flats?':`Which major and minor key have ${sg.split(':')[0]}?`,ask:'',back:`${r} major / ${rel} minor`};}});}
+ for(const r of K.major){const i=MAJ_ALL.indexOf(r),nx=MAJ_ALL[(i+1)%12];if(K.major.includes(nx))out.push({id:`cof:${r}`,topic:'keys',isNew:false,make:()=>({title:`${r} major: which major key is a fifth above?`,ask:'One step clockwise on the circle of fifths',back:`${nx} major`})});}
+ return out;}
+store.cards=store.cards||{};
+const CS={topic:'all',scope:'upto',cur:null,flip:false,last:null,pool:null,key:''};
+function cardDeck(){
+ const key=cfg.week+':'+CS.topic+':'+CS.scope;if(CS.pool&&CS.key===key)return CS.pool;
+ let p=cardsFor(cfg.week);if(CS.topic!=='all')p=p.filter(c=>c.topic===CS.topic);if(CS.scope==='new'){const n=p.filter(c=>c.isNew);if(n.length)p=n;}
+ CS.pool=p;CS.key=key;return p;}
+function nextCard(){
+ const p=cardDeck();if(!p.length){CS.cur=null;return;}
+ const it=pickItem(p,store.cards,Date.now(),CS.last);CS.last=it.id;CS.cur={id:it.id,c:it.make()};CS.flip=false;CS.auto=true;}
+function playCardTones(c){try{ac();let t=0;for(const x of c.tones){setTimeout(()=>{if(x.midis)x.midis.forEach(m=>tone(m,x.dur,0.14));else tone(x.midi,x.dur);},t);t+=x.dur*1000+(x.gap??200);}}catch(e){}}
+function renderCards(){
+ const v=$('#v-cards');const p=cardDeck();const now=Date.now();
+ const due=p.filter(c=>store.cards[c.id]&&store.cards[c.id].due<=now).length,fresh=p.filter(c=>!store.cards[c.id]).length;
+ if(!CS.cur||!p.some(c=>c.id===CS.cur.id))nextCard();
+ const opts=a=>a.map(([k,t])=>`<option value="${k}">${t}</option>`).join('');
+ v.innerHTML=`<div class="card stack"><div class="row"><h2 style="margin:0">Flash cards · Week ${cfg.week}</h2><span class="mono note">${p.length} cards</span></div>
+  <div class="grid2"><label class="f">Topic <select id="cTopic">${opts(CARD_TOPICS)}</select></label>
+  <label class="f">Which cards <select id="cScope">${opts([['upto','Week 1 through '+cfg.week],['new','New this week']])}</select></label></div>
+  <div class="note">${due} due for review · ${fresh} not seen yet. Tap the card to see the answer. No bass, no voice. Change the week in Setup.</div></div>
+  ${CS.cur?`<button class="card fc" id="fc" aria-label="Flip card">
+   <div class="note">${CS.flip?'Answer':'Question'}</div>
+   <div class="prompt">${CS.flip?CS.cur.c.back.split('\n')[0]:CS.cur.c.title}</div>
+   ${CS.flip?`<div class="sub">${CS.cur.c.back.split('\n').slice(1).join('<br>')}</div>`:(CS.cur.c.ask?`<div class="sub">${CS.cur.c.ask}</div>`:'')}
+   ${CS.cur.c.staff!=null&&!CS.flip?`<div class="staff" style="margin:0 auto">${staffSVG(CS.cur.c.staff)}</div>`:''}
+  </button>
+  ${CS.cur.c.tones?'<button class="btn" id="cPlay">Play the sound</button>':''}
+  ${CS.flip?'<div class="grid2"><button class="btn danger big" id="cMiss">Missed it</button><button class="btn primary big" id="cGot">Got it</button></div>':'<button class="btn" id="cFlip">Show answer</button>'}
+  <button class="btn" id="cSkip">Skip this card</button>`:'<div class="card note">No cards for this choice.</div>'}`;
+ $('#cTopic').value=CS.topic;$('#cScope').value=CS.scope;
+ $('#cTopic').onchange=e=>{CS.topic=e.target.value;CS.cur=null;renderCards();};
+ $('#cScope').onchange=e=>{CS.scope=e.target.value;CS.cur=null;renderCards();};
+ if(!CS.cur)return;
+ const flip=()=>{CS.flip=!CS.flip;renderCards();};
+ $('#fc').onclick=flip;const f=$('#cFlip');if(f)f.onclick=flip;
+ const pl=$('#cPlay');if(pl)pl.onclick=()=>playCardTones(CS.cur.c);
+ $('#cSkip').onclick=()=>{nextCard();renderCards();};
+ const rate=ok=>{store.cards[CS.cur.id]=srsUpdate(store.cards[CS.cur.id],ok,null,3000,Date.now());save();nextCard();renderCards();};
+ if(CS.flip){$('#cMiss').onclick=()=>rate(false);$('#cGot').onclick=()=>rate(true);}
+ if(CS.auto){CS.auto=false;if(CS.cur.c.tones&&!CS.flip)playCardTones(CS.cur.c);}}
 
 /* ---------- wiring ---------- */
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
  document.querySelectorAll('.tab').forEach(x=>x.setAttribute('aria-selected',String(x===t)));
- for(const v of ['train','progress','setup'])$('#v-'+v).hidden=v!==t.dataset.tab;
- if(t.dataset.tab==='progress')renderProgress();if(t.dataset.tab==='setup')renderSetup();if(t.dataset.tab==='train'&&!S.running&&$('#summary').hidden)renderHome();});
+ for(const v of ['train','cards','progress','setup'])$('#v-'+v).hidden=v!==t.dataset.tab;
+ if(t.dataset.tab==='cards')renderCards();if(t.dataset.tab==='progress')renderProgress();if(t.dataset.tab==='setup')renderSetup();if(t.dataset.tab==='train'&&!S.running&&$('#summary').hidden)renderHome();});
 $('#bStop').onclick=stopSession;
 $('#bSkip').onclick=()=>{if(S.running){S.q++;abortAll();}};
 $('#bRepeat').onclick=()=>{if(S.running){S.repeat=true;S.q++;abortAll();}};
